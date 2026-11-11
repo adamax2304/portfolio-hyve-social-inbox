@@ -1,0 +1,14 @@
+DROP TABLE IF EXISTS "OperatorBotSubscriber";
+DROP TABLE IF EXISTS "OperatorBot";
+DROP TABLE IF EXISTS "Order";
+DROP TABLE IF EXISTS "WebhookEvent";
+DROP TABLE IF EXISTS "IntegrationSecret";
+DROP TABLE IF EXISTS "Message";
+DROP TABLE IF EXISTS "AutomationRule";
+DROP TABLE IF EXISTS "Conversation";
+DROP TABLE IF EXISTS "Contact";
+DROP TABLE IF EXISTS "TenantMembership";
+DROP TABLE IF EXISTS "TenantOnboarding";
+DROP TABLE IF EXISTS "ChannelConnection";
+DROP TABLE IF EXISTS "AppUser";
+DROP TABLE IF EXISTS "Tenant";

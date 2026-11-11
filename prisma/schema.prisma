@@ -1,0 +1,415 @@
+generator client {
+  // Standard JS client with default node_modules output — this is the
+  // configuration Vercel's auto-bundling supports out of the box.
+  // Custom output path + the new "prisma-client" ESM provider broke
+  // engine packaging on Vercel serverless.
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantPlan {
+  STARTER
+  GROWTH
+  SCALE
+}
+
+enum ChannelProvider {
+  INSTAGRAM
+  WHATSAPP
+  TELEGRAM
+  MESSENGER
+  WEBCHAT
+  VIBER
+  SIGNAL
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  PENDING
+  ERROR
+  DISCONNECTED
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  ESCALATED
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+enum MessageStatus {
+  RECEIVED
+  DRAFT
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum AutomationMode {
+  OFF
+  SUGGEST
+  AUTO
+}
+
+enum EventKind {
+  MESSAGE_INBOUND
+  MESSAGE_OUTBOUND
+  STATUS_UPDATE
+  CONNECTION_UPDATE
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  AGENT
+  VIEWER
+}
+
+enum OnboardingStatus {
+  DRAFT
+  IN_PROGRESS
+  READY
+  LIVE
+}
+
+enum SecretKind {
+  ACCESS_TOKEN
+  REFRESH_TOKEN
+  WEBHOOK_SECRET
+  BOT_TOKEN
+  API_KEY
+  VERIFY_TOKEN
+}
+
+enum OrderStatus {
+  NEW
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Tenant {
+  id                    String              @id @default(cuid())
+  name                  String
+  slug                  String              @unique
+  plan                  TenantPlan          @default(STARTER)
+  timezone              String              @default("UTC")
+  businessType          String?
+  brandColor            String              @default("#c96b49")
+  aiEnabled             Boolean             @default(true)
+  aiMode                AutomationMode      @default(SUGGEST)
+  aiInstructions        String?
+  aiCollectOrders       Boolean             @default(false)
+  aiManagerInstructions String?
+  aiUseManaged          Boolean             @default(true)
+  aiManagedRequested    Boolean             @default(false)
+  aiCustomBaseUrl       String?
+  aiCustomModel         String?
+  aiCustomKeyMasked     String?
+  onboardingComplete    Boolean             @default(false)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  channels              ChannelConnection[]
+  automationRules       AutomationRule[]
+  memberships           TenantMembership[]
+  onboarding            TenantOnboarding?
+  secrets               IntegrationSecret[]
+  orders                Order[]
+  operatorBot           OperatorBot?
+}
+
+model OperatorBot {
+  id          String   @id @default(cuid())
+  tenantId    String   @unique
+  botId       String?
+  botUsername String?
+  botName     String?
+  tokenMasked String
+  status      String   @default("PENDING")
+  webhookUrl  String?
+  lastError   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model OperatorBotSubscriber {
+  id          String   @id @default(cuid())
+  tenantId    String
+  chatId      String
+  username    String?
+  firstName   String?
+  isOperator  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@unique([tenantId, chatId])
+  @@index([tenantId])
+}
+
+model AppUser {
+  id                  String             @id @default(cuid())
+  name                String
+  email               String             @unique
+  passwordHash        String?
+  telegramHandle      String?
+  phone               String?
+  themePreference     String             @default("light")
+  localePreference    String             @default("ru")
+  recoveryEmail       String?
+  recoveryTelegram    String?
+  mustChangePassword  Int                @default(0)
+  lastLoginAt         DateTime?
+  avatarUrl           String?
+  managedSetupConsent Int                @default(0) // 1 = user agreed to grant temporary access to Hyve specialist
+  managedSetupConsentAt DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  memberships         TenantMembership[]
+  passwordResets      PasswordReset[]
+}
+
+/// Concierge setup requests — owners who want a Hyve specialist to fully
+/// configure their workspace, channels, AI, etc.
+/// Created when user explicitly consents to grant temporary access.
+model ManagedSetupRequest {
+  id              String    @id @default(cuid())
+  userId          String
+  userName        String    // snapshot for admin
+  userEmail       String    // snapshot
+  contact         String    // preferred reachable channel: TG @user or email
+  contactType     String    // "telegram" | "email"
+  businessName    String?
+  message         String?   // what to automate / what's needed
+  consentGiven    Int       @default(1)
+  consentAt       DateTime  @default(now())
+  status          String    @default("PENDING") // PENDING | IN_PROGRESS | DONE | CANCELLED
+  notifyMessageId Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status, createdAt])
+  @@map("managed_setup_requests")
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  used      Int      @default(0)
+  createdAt DateTime @default(now())
+  user      AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model TenantMembership {
+  id        String         @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      MembershipRole @default(AGENT)
+  joinedAt  DateTime       @default(now())
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      AppUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, role])
+}
+
+model TenantOnboarding {
+  id                String           @id @default(cuid())
+  tenantId          String           @unique
+  status            OnboardingStatus @default(DRAFT)
+  businessType      String?
+  contactEmail      String?
+  contactPhone      String?
+  websiteUrl        String?
+  selectedProviders String?
+  checklistJson     String?
+  formDraftJson     String?
+  notes             String?
+  launchedAt        DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model ChannelConnection {
+  id                String           @id @default(cuid())
+  tenantId          String
+  provider          ChannelProvider
+  label             String
+  status            ConnectionStatus @default(PENDING)
+  enabled           Boolean          @default(true)
+  externalAccountId String?
+  destinationHint   String?
+  authMode          String?
+  webhookSecretHint String?
+  configJson        String?
+  lastSyncedAt      DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts          Contact[]
+  webhookEvents     WebhookEvent[]
+  secrets           IntegrationSecret[]
+
+  @@unique([tenantId, provider, label])
+  @@index([tenantId, provider])
+}
+
+model Contact {
+  id                  String            @id @default(cuid())
+  tenantId            String
+  channelConnectionId String
+  externalUserId      String
+  displayName         String
+  username            String?
+  phone               String?
+  locale              String?
+  notes               String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  channelConnection   ChannelConnection @relation(fields: [channelConnectionId], references: [id], onDelete: Cascade)
+  conversations       Conversation[]
+
+  @@unique([channelConnectionId, externalUserId])
+  @@index([tenantId, displayName])
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  tenantId      String
+  contactId     String
+  provider      ChannelProvider
+  channelLabel  String
+  subject       String?
+  status        ConversationStatus @default(OPEN)
+  priority      Int                @default(2)
+  aiMode        AutomationMode     @default(SUGGEST)
+  assignedTo    String?
+  lastMessageAt DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  contact       Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@index([tenantId, status, lastMessageAt])
+  @@index([contactId, lastMessageAt])
+}
+
+model Message {
+  id                String           @id @default(cuid())
+  tenantId          String
+  conversationId    String
+  externalMessageId String?
+  direction         MessageDirection
+  status            MessageStatus    @default(RECEIVED)
+  senderLabel       String
+  content           String
+  metadataJson      String?
+  createdAt         DateTime         @default(now())
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model AutomationRule {
+  id          String           @id @default(cuid())
+  tenantId    String
+  name        String
+  isEnabled   Boolean          @default(true)
+  provider    ChannelProvider?
+  triggerType String
+  summary     String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, isEnabled])
+}
+
+model IntegrationSecret {
+  id                  String            @id @default(cuid())
+  tenantId            String
+  channelConnectionId String?
+  provider            ChannelProvider
+  secretKind          SecretKind
+  label               String
+  maskedValue         String
+  encryptedPayload    String
+  lastRotatedAt       DateTime          @default(now())
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channelConnection   ChannelConnection? @relation(fields: [channelConnectionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, provider, secretKind])
+  @@index([channelConnectionId, secretKind])
+}
+
+model WebhookEvent {
+  id                  String             @id @default(cuid())
+  tenantId            String?
+  channelConnectionId String?
+  provider            ChannelProvider
+  eventKind           EventKind
+  externalEventId     String?
+  payloadJson         String
+  outcome             String?
+  receivedAt          DateTime           @default(now())
+  processedAt         DateTime?
+  channelConnection   ChannelConnection? @relation(fields: [channelConnectionId], references: [id], onDelete: SetNull)
+
+  @@index([provider, receivedAt])
+  @@index([tenantId, receivedAt])
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  tenantId       String
+  conversationId String
+  contactName    String
+  contactPhone   String?
+  status         OrderStatus @default(NEW)
+  itemsJson      String      // JSON: [{name, qty, price}]
+  totalAmount    String?
+  deliveryInfo   String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, conversationId])
+}
+
+model AccessRequest {
+  id                String    @id @default(cuid())
+  contact           String    // raw value (telegram handle, phone, or email)
+  contactType       String    // "telegram" | "email"
+  message           String?   // optional note from requester
+  status            String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  generatedLogin    String?   // login created on approval (also stored in AppUser.email)
+  approvedAt        DateTime?
+  approvedBy        String?   // telegram chat_id of admin who approved
+  notifyMessageId   Int?      // telegram message_id of notification (for inline edit on approval)
+  createdAt         DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@map("access_requests")
+}

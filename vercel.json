@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npx prisma generate && next build",
+  "framework": "nextjs",
+  "regions": ["fra1"],
+  "functions": {
+    "src/app/api/webhooks/operator-bot/[tenantId]/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/upload/voice/route.ts": {
+      "maxDuration": 30
+    }
+  }
+}

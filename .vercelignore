@@ -1,0 +1,14 @@
+# Exclude local env files - use Vercel dashboard env vars instead
+.env
+.env.local
+.env.development
+.env.development.local
+
+# Local dev database
+prisma/dev.db
+prisma/dev.db-journal
+*.db
+*.db-journal
+
+# Local uploads (use R2/Supabase in prod)
+public/uploads/
